@@ -1,18 +1,17 @@
-<?PHP
-
-/*
+<?php
+/**
  * no.php (c) 2016, 2017 Michael Franzl
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
  * the rights to use, copy, modify, merge, publish, distribute, sublicense,
  * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included
  * in all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
@@ -22,22 +21,43 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @see https://stackoverflow.com/questions/8719276/cross-origin-request-headerscors-with-php-headers
+ *      for CORS overview.
+ * @see https://developer.chrome.com/blog/private-network-access-preflight for post-fetch CORS header needs
+ */
 
-$backend_url = "https://myapp.backend.com:3000/";
+//
+// Update the path to your config file that sets the following variables:
+//  - $backend_url
+//  - $uri_rel
+//  - $request_includes_nophp_uri
+//  - $is_ruby_on_rails
+//
+$configPath = rtrim(realpath($_SERVER['DOCUMENT_ROOT'] . '/../'), '/') . '/config/env.php';
+if (is_file($configPath)) {
+    require_once($configPath);
+}
+
+//
+// Or just set them here:
+//
+// $backend_url = "https://myapp.backend.com:3000/";
+// $uri_rel = "subdir/no.php"; # URI to this file relative to public_html
+// $request_includes_nophp_uri = true;
+// $is_ruby_on_rails = false;
+//
 $backend_info = parse_url($backend_url);
 $host = $_SERVER['HTTP_HOST'];
 $request_uri = $_SERVER['REQUEST_URI'];
-$uri_rel = "subdir/no.php"; # URI to this file relative to public_html
 
-$request_includes_nophp_uri = true;
-if ( $request_includes_nophp_uri == false) {
-    $request_uri = str_replace( $uri_rel, "/", $request_uri );
+if ($request_includes_nophp_uri == false) {
+    $request_uri = str_replace($uri_rel, "/", $request_uri);
 }
 
-$is_ruby_on_rails = false;
-if ( $is_ruby_on_rails == true) {
+if ($is_ruby_on_rails == true) {
     # You have to understand the Ruby on Rails Asset pipeline to understand this.
-    $request_uri = str_replace( "$uri_rel/assets", "/assets", $request_uri );
+    $request_uri = str_replace("$uri_rel/assets", "/assets", $request_uri);
 }
 
 $url = $backend_url . $request_uri;
@@ -46,26 +66,27 @@ $url = $backend_url . $request_uri;
 function getRequestHeaders($multipart_delimiter=NULL) {
     $headers = array();
     foreach($_SERVER as $key => $value) {
-        if(preg_match("/^HTTP/", $key)) { # only keep HTTP headers
+        if (preg_match("/^HTTP/", $key)) { # only keep HTTP headers
             if(preg_match("/^HTTP_HOST/", $key) == 0 && # let curl set the actual host/proxy
-            preg_match("/^HTTP_ORIGIN/", $key) == 0 &&
-            preg_match("/^HTTP_CONTENT_LEN/", $key) == 0 && # let curl set the actual content length
-            preg_match("/^HTTPS/", $key) == 0
+                // preg_match("/^HTTP_ORIGIN/", $key) == 0 && // Need this for CORS support
+                preg_match("/^HTTP_CONTENT_LEN/", $key) == 0 && # let curl set the actual content length
+                preg_match("/^HTTPS/", $key) == 0
             ) {
                 $key = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($key, 5)))));
-                if ($key)
+                if ($key) {
                     array_push($headers, "$key: $value");
+                }
             }
         } elseif (preg_match("/^CONTENT_TYPE/", $key)) {
-
             $key = "Content-Type";
 
-            if(preg_match("/^multipart/", strtolower($value)) && $multipart_delimiter) {
+            if (preg_match("/^multipart/", strtolower($value)) && $multipart_delimiter) {
                 $value = "multipart/form-data; boundary=" . $multipart_delimiter;
                 array_push($headers, "$key: $value");
-            }
-            else if(preg_match("/^application\/json/", strtolower($value))) {
+            } elseif (preg_match("/^application\/json/", strtolower($value))) {
                 // Handle application/json
+                array_push($headers, "$key: $value");
+            } else {
                 array_push($headers, "$key: $value");
             }
         }
@@ -75,28 +96,28 @@ function getRequestHeaders($multipart_delimiter=NULL) {
 
 function build_domain_regex($hostname)
 {
-	$names = explode('.', $hostname); //assumes main domain is the TLD
-	$regex = "";
-	for ($i= 0; $i < count ($names)-2; $i++)
-	{
-		$regex .= '['.$names[$i].'.]?';
-	}
-	$main_domain = $names[count($names)-2] .".". $names[count($names)-1];
-	$regex .= $main_domain;
-	return $regex;
+    $names = explode('.', $hostname); //assumes main domain is the TLD
+    $regex = "";
+    for ($i= 0; $i < count ($names)-2; $i++)
+    {
+        $regex .= '['.$names[$i].'.]?';
+    }
+    $main_domain = $names[count($names)-2] .".". $names[count($names)-1];
+    $regex .= $main_domain;
+    return $regex;
 }
-  
+
 function build_multipart_data_files($delimiter, $fields, $files) {
     # Inspiration from: https://gist.github.com/maxivak/18fcac476a2f4ea02e5f80b303811d5f :)
     $data = '';
     $eol = "\r\n";
-  
+
     foreach ($fields as $name => $content) {
         $data .= "--" . $delimiter . $eol
             . 'Content-Disposition: form-data; name="' . $name . "\"".$eol.$eol
             . $content . $eol;
     }
-  
+
     foreach ($files as $name => $content) {
         $data .= "--" . $delimiter . $eol
             . 'Content-Disposition: form-data; name="' . $name . '"; filename="' . $name . '"' . $eol
@@ -110,50 +131,70 @@ function build_multipart_data_files($delimiter, $fields, $files) {
     return $data;
 }
 
-$curl = curl_init( $url );
-curl_setopt( $curl, CURLOPT_HTTPHEADER, getRequestHeaders() );
-curl_setopt( $curl, CURLOPT_FOLLOWLOCATION, true ); # follow redirects
-curl_setopt( $curl, CURLOPT_HEADER, true ); # include the headers in the output
-curl_setopt( $curl, CURLOPT_RETURNTRANSFER, true ); # return output as string
+$curl = curl_init($url);
+curl_setopt($curl, CURLOPT_HTTPHEADER, getRequestHeaders());
+curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true); # follow redirects
+curl_setopt($curl, CURLOPT_HEADER, true); # include the headers in the output
+curl_setopt($curl, CURLOPT_RETURNTRANSFER, true); # return output as string
 
-if ( strtolower($_SERVER['REQUEST_METHOD']) == 'post' ) {
-    curl_setopt( $curl, CURLOPT_POST, true );
+$method = strtolower($_SERVER['REQUEST_METHOD'] ?? 'get');
+if ($method == 'delete') {
+    curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+} elseif ($method == 'options') {
+    curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "OPTIONS");
+} elseif ($method == 'patch') {
+    curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+} elseif ($method == 'post') {
+    curl_setopt($curl, CURLOPT_POST, true);
     $post_data = file_get_contents("php://input");
 
     if (preg_match("/^multipart/", strtolower($_SERVER['CONTENT_TYPE']))) {
         $delimiter = '-------------' . uniqid();
         $post_data = build_multipart_data_files($delimiter, $_POST, $_FILES);
-        curl_setopt( $curl, CURLOPT_HTTPHEADER, getRequestHeaders($delimiter) );
+        curl_setopt($curl, CURLOPT_HTTPHEADER, getRequestHeaders($delimiter));
     }
 
-    curl_setopt( $curl, CURLOPT_POSTFIELDS, $post_data );
+    curl_setopt($curl, CURLOPT_POSTFIELDS, $post_data);
+} elseif ($method == 'put') {
+    curl_setopt($curl, CURLOPT_PUT, true);
 }
-  
-$contents = curl_exec( $curl ); # reverse proxy. the actual request to the backend server.
-curl_close( $curl ); # curl is done now
 
+$contents = curl_exec($curl); # reverse proxy. the actual request to the backend server.
+curl_close($curl); # curl is done now
 
 $contents = preg_replace('/^HTTP\/1.1 3.*(?=HTTP\/1\.1)/sm', '', $contents); # remove redirection headers
-list( $header_text, $contents ) = preg_split( '/([\r\n][\r\n])\\1/', $contents, 2 );
+list($header_text, $contents) = preg_split('/([\r\n][\r\n])\\1/', $contents, 2);
 
-$headers_arr = preg_split( '/[\r\n]+/', $header_text ); 
-  
+$headers_arr = preg_split('/[\r\n]+/', $header_text);
+
 // Propagate headers to response.
-foreach ( $headers_arr as $header ) {
-    if ( !preg_match( '/^Transfer-Encoding:/i', $header ) ) {
-        if ( preg_match( '/^Location:/i', $header ) ) {
+foreach ($headers_arr as $header) {
+    if (!preg_match('/^Transfer-Encoding:/i', $header)) {
+        if (preg_match('/^Location:/i', $header)) {
             # rewrite absolute local redirects to relative ones
             $header = str_replace($backend_url, "/", $header);
+        } elseif (preg_match('/^set-cookie:/i', $header)) {
+            # replace original domain name in Set-Cookie headers with our server's domain
+            $domain_regex = build_domain_regex($backend_info['host']);
+            $header = preg_replace(
+                '/Domain=' . $domain_regex . '/',
+                'Domain=' . $host,
+                $header
+            );
+        } elseif ($method == 'options' && preg_match('/^content-type:/i', $header)) {
+            // Skip content-type header on OPTIONS requests
+            continue;
         }
-        else if ( preg_match( '/^set-cookie:/i', $header ) ) {
-			# replace original domain name in Set-Cookie headers with our server's domain
-			$domain_regex = build_domain_regex($backend_info['host']);
-			$header = preg_replace('/Domain='.$domain_regex.'/', 'Domain='.$host, $header);
-		}
-        header( $header, false );
+
+        header($header, false);
     }
+}
+
+// Strip stubbon content-type header for OPTIONS requests
+if ($method == 'options') {
+    header('Content-Type:');
+    header_remove('Content-Type');
 }
 
 print $contents; # return the proxied request result to the browser
 
-?>
